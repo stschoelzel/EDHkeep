@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pydantic
+requests
+numpy
+git+https://github.com/stainedhat/pyedhrec.git
