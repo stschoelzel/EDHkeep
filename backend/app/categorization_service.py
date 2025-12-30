@@ -15,70 +15,88 @@ class CategorizationService:
         print(f"Fetching and analyzing Top cards for {color}...")
         cards = self.edhrec.get_top_cards(color)
         
-        # Extract inclusion rates for cutoff calculation
-        # Assuming 'inclusion' field exists and is comparable. 
-        # EDHRec data often has 'num_decks' or 'label' (e.g. "55% of decks").
-        # We need to parse percentages.
-        
         rates = []
         for c in cards:
-            # Heuristic to parse inclusion rate. 
-            # In raw JSON, it might be 'label' with text, or 'num_decks'.
-            # We'll need to inspect the card object structure from previous debug session.
-            # Assuming 'num_decks' is integer.
             if 'num_decks' in c:
                  rates.append(c['num_decks'])
         
         cutoff_idx = calculate_cutoff_index(rates)
         
-        # Create a set of "Keep" names (up to cutoff)
-        # And "Pending" (Cutoff to Cutoff + 50)
-        
-        keep_set = set()
-        pending_set = set()
+        # Store metadata for enrichment
+        keep_data = {}
+        pending_data = {}
         
         for i, card in enumerate(cards):
             name = card.get('name')
             if not name: continue
             
-            # Basic normalization
-            name = name.split(" // ")[0] 
+            # Normalize
+            normalized_name = name.split(" // ")[0] 
+            
+            # Extract useful data
+            rank = i + 1 # Rank in this specific color list
+            url = f"https://edhrec.com{card.get('url', '')}" if card.get('url') else None
+            # EDHRec raw data often has 'url' relative path
+            
+            meta = {
+                'rank': rank,
+                'url': url,
+                'color': color.upper(), # Inference
+                'inclusion': card.get('num_decks', 0)
+            }
             
             if i <= cutoff_idx:
-                keep_set.add(name)
+                keep_data[normalized_name] = meta
             elif i <= cutoff_idx + 50:
-                pending_set.add(name)
+                pending_data[normalized_name] = meta
                 
-        self.cache[color] = {'keep': keep_set, 'pending': pending_set}
+        self.cache[color] = {'keep': keep_data, 'pending': pending_data}
         return self.cache[color]
 
     def categorize_collection(self, collection: List[MTGCard]) -> List[MTGCard]:
-        # Pre-load basic colors (WUBRG)
-        # For a full implementation, we'd check the collection's colors first.
         colors = ['w', 'u', 'b', 'r', 'g']
         
-        # Combine all Keep/Pending sets for O(1) lookup
-        # This is a simplification. Ideally check against specific color identity.
-        # But for "General Keep", checking against any mono-color Top list is a good start.
+        # Aggregate logic: A card might appear in multiple top lists (e.g. Artifacts in Blue and White).
+        # We prioritize "Keep" status.
         
-        global_keep = set()
-        global_pending = set()
+        global_keep_map = {}
+        global_pending_map = {}
         
         for c in colors:
             data = self._get_top_cards_with_cutoff(c)
-            global_keep.update(data['keep'])
-            global_pending.update(data['pending'])
+            global_keep_map.update(data['keep'])
+            global_pending_map.update(data['pending'])
             
         # Categorize
         for card in collection:
-            # Normalize name
             name = card.name.split(" // ")[0]
             
-            if name in global_keep:
+            # Shared helper to generate image URL
+            def get_image_url(card_name, set_code):
+                 if set_code and set_code.lower() != "unk":
+                     return f"https://api.scryfall.com/cards/named?exact={card_name}&set={set_code}&format=image"
+                 return f"https://api.scryfall.com/cards/named?exact={card_name}&format=image"
+
+            if name in global_keep_map:
                 card.category = "Keep"
-            elif name in global_pending:
+                meta = global_keep_map[name]
+                card.edhrec_rank = meta['rank']
+                card.edhrec_url = meta['url']
+                card.color_identity = meta['color']
+                card.inclusion_rate = meta['inclusion']
+                card.image_uris = {"normal": get_image_url(name, card.set_code)}
+
+            elif name in global_pending_map:
                 card.category = "Pending"
+                meta = global_pending_map[name]
+                card.edhrec_rank = meta['rank']
+                card.edhrec_url = meta['url']
+                card.color_identity = meta['color']
+                card.inclusion_rate = meta['inclusion']
+                card.image_uris = {"normal": get_image_url(name, card.set_code)}
+
             else:
                 card.category = "Fail"
+                card.image_uris = {"normal": get_image_url(name, card.set_code)}
                 
         return collection

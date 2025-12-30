@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from app.models import MTGCard
 from app.analysis import calculate_cutoff_index
 from app.services import EDHRecService
@@ -6,6 +7,15 @@ from app.csv_service import CSVService
 from app.categorization_service import CategorizationService
 
 app = FastAPI(title="EDHKeep Backend")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # For dev, allow all. In prod, restrict to frontend domain.
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 edhrec_service = EDHRecService()
 csv_service = CSVService()
 categorization_service = CategorizationService(edhrec_service)
@@ -39,7 +49,8 @@ async def upload_collection(file: UploadFile = File(...)):
         "filename": file.filename, 
         "total_cards": len(cards),
         "stats": stats,
-        "preview": categorized_cards[:10]
+        "preview": categorized_cards[:10], # Keep for legacy check
+        "all_cards": categorized_cards # Send full list for frontend processing
     }
 
 @app.post("/analyze/cutoff")
