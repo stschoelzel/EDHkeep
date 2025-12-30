@@ -1,14 +1,46 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from app.models import MTGCard
 from app.analysis import calculate_cutoff_index
 from app.services import EDHRecService
+from app.csv_service import CSVService
+from app.categorization_service import CategorizationService
 
 app = FastAPI(title="EDHKeep Backend")
 edhrec_service = EDHRecService()
+csv_service = CSVService()
+categorization_service = CategorizationService(edhrec_service)
 
 @app.get("/")
 def read_root():
     return {"message": "Welcome to EDHKeep Backend"}
+
+@app.post("/collection/upload")
+async def upload_collection(file: UploadFile = File(...)):
+    """
+    Uploads a CSV collection, parses it, and categorizes cards.
+    """
+    content = await file.read()
+    text_content = content.decode("utf-8")
+    
+    # 1. Parse
+    cards = csv_service.parse_csv(text_content)
+    
+    # 2. Categorize
+    # This might take a moment as it fetches EDHRec data on first run
+    categorized_cards = categorization_service.categorize_collection(cards)
+    
+    # Statistics
+    stats = {"Keep": 0, "Pending": 0, "Fail": 0}
+    for c in categorized_cards:
+        if c.category in stats:
+            stats[c.category] += 1
+    
+    return {
+        "filename": file.filename, 
+        "total_cards": len(cards),
+        "stats": stats,
+        "preview": categorized_cards[:10]
+    }
 
 @app.post("/analyze/cutoff")
 def analyze_cutoff(data: list[float]):

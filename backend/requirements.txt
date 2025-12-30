@@ -3,4 +3,5 @@ uvicorn
 pydantic
 requests
 numpy
+python-multipart
 git+https://github.com/stainedhat/pyedhrec.git
