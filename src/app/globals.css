@@ -1,47 +1,4 @@
-@import "tailwindcss";
-
-/* ─── Brutalist Neon Archivist Design Tokens ─── */
-
-:root {
-  /* Status Neons */
-  --keep: #89f0cb;
-  --fail: #fd6ed0;
-  --pending: #f6e05e;
-
-  /* Surfaces (tonal layering) */
-  --surface: #131313;
-  --surface-low: #1c1b1b;
-  --surface-high: #353335;
-  --surface-bright: #4a484a;
-
-  /* Text */
-  --foreground: #e8e6e3;
-  --foreground-muted: #9a9897;
-
-  /* Ghost border (15% opacity only) */
-  --ghost-border: rgba(232, 230, 227, 0.15);
-}
-
-@theme inline {
-  /* Colors */
-  --color-keep: var(--keep);
-  --color-fail: var(--fail);
-  --color-pending: var(--pending);
-  --color-surface: var(--surface);
-  --color-surface-low: var(--surface-low);
-  --color-surface-high: var(--surface-high);
-  --color-surface-bright: var(--surface-bright);
-  --color-foreground: var(--foreground);
-  --color-foreground-muted: var(--foreground-muted);
-  --color-ghost-border: var(--ghost-border);
-
-  /* Fonts */
-  --font-display: "Resistance", sans-serif;
-  --font-body: "Karrik", sans-serif;
-  --font-mono: "Illinois Mono", monospace;
-}
-
-/* ─── Font Faces ─── */
+/* ─── Font Faces (must be before Tailwind import) ─── */
 
 @font-face {
   font-family: "Resistance";
@@ -90,6 +47,49 @@
   font-weight: 700;
   font-style: normal;
   font-display: swap;
+}
+
+@import "tailwindcss";
+
+/* ─── Brutalist Neon Archivist Design Tokens ─── */
+
+:root {
+  /* Status Neons */
+  --keep: #89f0cb;
+  --fail: #fd6ed0;
+  --pending: #f6e05e;
+
+  /* Surfaces (tonal layering) */
+  --surface: #131313;
+  --surface-low: #1c1b1b;
+  --surface-high: #353335;
+  --surface-bright: #4a484a;
+
+  /* Text */
+  --foreground: #e8e6e3;
+  --foreground-muted: #9a9897;
+
+  /* Ghost border (15% opacity only) */
+  --ghost-border: rgba(232, 230, 227, 0.15);
+}
+
+@theme inline {
+  /* Colors */
+  --color-keep: var(--keep);
+  --color-fail: var(--fail);
+  --color-pending: var(--pending);
+  --color-surface: var(--surface);
+  --color-surface-low: var(--surface-low);
+  --color-surface-high: var(--surface-high);
+  --color-surface-bright: var(--surface-bright);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-ghost-border: var(--ghost-border);
+
+  /* Fonts */
+  --font-display: "Resistance", sans-serif;
+  --font-body: "Karrik", sans-serif;
+  --font-mono: "Illinois Mono", monospace;
 }
 
 /* ─── Base Styles ─── */

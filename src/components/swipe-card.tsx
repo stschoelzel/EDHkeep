@@ -15,7 +15,6 @@ export function SwipeCard({ card, onSwipe, isTop }: SwipeCardProps) {
   const y = useMotionValue(0);
   const rotate = useTransform(x, [-200, 200], [-15, 15]);
 
-  // Border glow intensity based on drag
   const keepOpacity = useTransform(x, [-200, -50, 0], [0.4, 0.1, 0]);
   const failOpacity = useTransform(x, [0, 50, 200], [0, 0.1, 0.4]);
 
@@ -54,7 +53,7 @@ export function SwipeCard({ card, onSwipe, isTop }: SwipeCardProps) {
       animate={isTop ? { scale: 1 } : { scale: 0.95, y: 10 }}
       exit={{ x: 300, opacity: 0, transition: { duration: 0.3 } }}
     >
-      <div className="relative bg-surface-high rounded-none overflow-hidden h-full">
+      <div className="relative bg-surface-high overflow-hidden h-full flex flex-col">
         {/* Keep glow overlay */}
         {isTop && (
           <motion.div
@@ -94,69 +93,67 @@ export function SwipeCard({ card, onSwipe, isTop }: SwipeCardProps) {
           </>
         )}
 
-        {/* Card image — asymmetric layout: offset left */}
-        <div className="flex h-full">
-          <div className="w-3/5 relative flex-shrink-0">
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={card.name}
-                className="w-full h-full object-cover"
-                draggable={false}
-              />
-            ) : (
-              <div className="w-full h-full bg-surface-low flex items-center justify-center">
-                <span className="font-mono text-xs text-foreground-muted">
-                  No image
-                </span>
-              </div>
-            )}
+        {/* Card image — top section */}
+        <div className="relative flex-1 min-h-0">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={card.name}
+              className="w-full h-full object-contain bg-surface"
+              draggable={false}
+            />
+          ) : (
+            <div className="w-full h-full bg-surface-low flex items-center justify-center">
+              <span className="font-mono text-xs text-foreground-muted">
+                No image
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Info bar — bottom section */}
+        <div className="bg-surface-low px-4 py-3 flex items-center gap-4">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-display text-base text-foreground leading-tight tracking-tight truncate">
+              {card.name}
+            </h3>
+            <span className="font-mono text-[10px] text-foreground-muted uppercase">
+              {card.set_code}
+            </span>
           </div>
 
-          {/* Technical breakdown panel */}
-          <div className="flex-1 bg-surface-low p-4 flex flex-col justify-between">
-            <div>
-              <h3 className="font-display text-lg text-foreground leading-tight tracking-tight">
-                {card.name}
-              </h3>
-              <p className="font-mono text-xs text-foreground-muted mt-1 uppercase">
-                {card.set_code}
-              </p>
+          {card.edhrec_rank && (
+            <div className="text-right flex-shrink-0">
+              <span className="font-mono text-[10px] text-foreground-muted uppercase tracking-widest block">
+                Rank
+              </span>
+              <span className="font-mono text-base text-keep font-bold">
+                #{card.edhrec_rank}
+              </span>
             </div>
+          )}
 
-            <div className="flex flex-col gap-2">
-              {card.edhrec_rank && (
-                <div>
-                  <span className="font-mono text-[10px] text-foreground-muted uppercase tracking-widest">
-                    Rank
-                  </span>
-                  <p className="font-mono text-lg text-keep font-bold">
-                    #{card.edhrec_rank}
-                  </p>
-                </div>
-              )}
-              {card.color_identity && (
-                <div>
-                  <span className="font-mono text-[10px] text-foreground-muted uppercase tracking-widest">
-                    Color
-                  </span>
-                  <p className="font-mono text-sm text-foreground">
-                    {card.color_identity}
-                  </p>
-                </div>
-              )}
-              {card.inclusion_rate != null && (
-                <div>
-                  <span className="font-mono text-[10px] text-foreground-muted uppercase tracking-widest">
-                    Decks
-                  </span>
-                  <p className="font-mono text-sm text-foreground">
-                    {card.inclusion_rate.toLocaleString()}
-                  </p>
-                </div>
-              )}
+          {card.color_identity && (
+            <div className="text-right flex-shrink-0">
+              <span className="font-mono text-[10px] text-foreground-muted uppercase tracking-widest block">
+                Color
+              </span>
+              <span className="font-mono text-sm text-foreground">
+                {card.color_identity}
+              </span>
             </div>
-          </div>
+          )}
+
+          {card.inclusion_rate != null && (
+            <div className="text-right flex-shrink-0">
+              <span className="font-mono text-[10px] text-foreground-muted uppercase tracking-widest block">
+                Decks
+              </span>
+              <span className="font-mono text-sm text-foreground">
+                {card.inclusion_rate.toLocaleString()}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </motion.div>
