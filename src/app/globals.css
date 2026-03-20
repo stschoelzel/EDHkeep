@@ -1,0 +1,135 @@
+@import "tailwindcss";
+
+/* ─── Brutalist Neon Archivist Design Tokens ─── */
+
+:root {
+  /* Status Neons */
+  --keep: #89f0cb;
+  --fail: #fd6ed0;
+  --pending: #f6e05e;
+
+  /* Surfaces (tonal layering) */
+  --surface: #131313;
+  --surface-low: #1c1b1b;
+  --surface-high: #353335;
+  --surface-bright: #4a484a;
+
+  /* Text */
+  --foreground: #e8e6e3;
+  --foreground-muted: #9a9897;
+
+  /* Ghost border (15% opacity only) */
+  --ghost-border: rgba(232, 230, 227, 0.15);
+}
+
+@theme inline {
+  /* Colors */
+  --color-keep: var(--keep);
+  --color-fail: var(--fail);
+  --color-pending: var(--pending);
+  --color-surface: var(--surface);
+  --color-surface-low: var(--surface-low);
+  --color-surface-high: var(--surface-high);
+  --color-surface-bright: var(--surface-bright);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-ghost-border: var(--ghost-border);
+
+  /* Fonts */
+  --font-display: "Resistance", sans-serif;
+  --font-body: "Karrik", sans-serif;
+  --font-mono: "Illinois Mono", monospace;
+}
+
+/* ─── Font Faces ─── */
+
+@font-face {
+  font-family: "Resistance";
+  src: url("/fonts/Resistance.woff2") format("woff2"),
+    url("/fonts/Resistance.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Karrik";
+  src: url("/fonts/Karrik-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Karrik";
+  src: url("/fonts/Karrik-Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Illinois Mono";
+  src: url("/fonts/IllinoisMono-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Illinois Mono";
+  src: url("/fonts/IllinoisMono-Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Illinois Mono";
+  src: url("/fonts/IllinoisMono-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ─── Base Styles ─── */
+
+body {
+  background: var(--surface);
+  color: var(--foreground);
+  font-family: "Karrik", sans-serif;
+}
+
+/* ─── Utility: Neon Glow Effects ─── */
+
+.glow-keep {
+  box-shadow: 0 0 40px rgba(137, 240, 203, 0.08);
+}
+
+.glow-fail {
+  box-shadow: 0 0 40px rgba(253, 110, 208, 0.08);
+}
+
+.glow-pending {
+  box-shadow: 0 0 40px rgba(246, 224, 94, 0.08);
+}
+
+.glow-keep-strong {
+  box-shadow: 0 0 60px rgba(137, 240, 203, 0.15);
+}
+
+.glow-fail-strong {
+  box-shadow: 0 0 60px rgba(253, 110, 208, 0.15);
+}
+
+.glow-pending-strong {
+  box-shadow: 0 0 60px rgba(246, 224, 94, 0.15);
+}
+
+/* ─── Glass surface for floating elements ─── */
+
+.glass {
+  background: rgba(74, 72, 74, 0.6);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
