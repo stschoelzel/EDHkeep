@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useMotionValue, useTransform, PanInfo } from "framer-motion";
+import { motion, useMotionValue, useTransform, type PanInfo, type Easing } from "framer-motion";
 import type { MTGCard, SwipeDirection } from "@/lib/types";
 import { SWIPE_THRESHOLD_PX, SWIPE_THRESHOLD_VEL } from "@/lib/constants";
 
@@ -8,9 +8,10 @@ interface SwipeCardProps {
   card: MTGCard;
   onSwipe: (direction: SwipeDirection) => void;
   isTop: boolean;
+  exitDirection?: SwipeDirection | null;
 }
 
-export function SwipeCard({ card, onSwipe, isTop }: SwipeCardProps) {
+export function SwipeCard({ card, onSwipe, isTop, exitDirection }: SwipeCardProps) {
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const rotate = useTransform(x, [-200, 200], [-15, 15]);
@@ -39,6 +40,42 @@ export function SwipeCard({ card, onSwipe, isTop }: SwipeCardProps) {
     }
   };
 
+  const easeIn: Easing = "easeIn";
+
+  const getExitAnimation = () => {
+    switch (exitDirection) {
+      case "left":
+        return {
+          x: -500,
+          rotate: -25,
+          scale: 0.6,
+          opacity: 0,
+          transition: { duration: 0.45, ease: easeIn },
+        };
+      case "right":
+        return {
+          x: 500,
+          rotate: 25,
+          scale: 0.6,
+          opacity: 0,
+          transition: { duration: 0.45, ease: easeIn },
+        };
+      case "up":
+        return {
+          y: 20,
+          scale: 0.88,
+          opacity: 0,
+          transition: { duration: 0.18, ease: easeIn },
+        };
+      default:
+        return {
+          x: 300,
+          opacity: 0,
+          transition: { duration: 0.3 },
+        };
+    }
+  };
+
   const imageUrl = card.image_uris?.normal || card.image_uris?.small;
 
   return (
@@ -51,7 +88,7 @@ export function SwipeCard({ card, onSwipe, isTop }: SwipeCardProps) {
       onDragEnd={isTop ? handleDragEnd : undefined}
       initial={isTop ? { scale: 1 } : { scale: 0.95, y: 10 }}
       animate={isTop ? { scale: 1 } : { scale: 0.95, y: 10 }}
-      exit={{ x: 300, opacity: 0, transition: { duration: 0.3 } }}
+      exit={getExitAnimation()}
     >
       <div className="relative bg-surface-high overflow-hidden h-full flex flex-col">
         {/* Keep glow overlay */}

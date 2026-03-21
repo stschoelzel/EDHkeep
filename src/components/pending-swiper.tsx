@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
 import { SwipeCard } from "./swipe-card";
+import { SwipeBurst } from "./swipe-burst";
 import { Button } from "./ui/button";
 import type { MTGCard, SwipeDirection } from "@/lib/types";
 
@@ -14,16 +15,24 @@ interface PendingSwiperProps {
 
 export function PendingSwiper({ cards, onResolve }: PendingSwiperProps) {
   const [index, setIndex] = useState(0);
+  const [exitDirection, setExitDirection] = useState<SwipeDirection | null>(null);
+  const [burstTrigger, setBurstTrigger] = useState(0);
 
   const handleSwipe = useCallback(
     (direction: SwipeDirection) => {
       const card = cards[index];
       if (!card) return;
 
+      setExitDirection(direction);
+      if (direction !== "up") {
+        setBurstTrigger(Date.now());
+      }
+
       setTimeout(() => {
         onResolve(card.name, direction);
         setIndex((prev) => prev + 1);
-      }, 200);
+        setExitDirection(null);
+      }, direction === "up" ? 150 : 300);
     },
     [cards, index, onResolve]
   );
@@ -73,7 +82,7 @@ export function PendingSwiper({ cards, onResolve }: PendingSwiperProps) {
   return (
     <div className="flex flex-col gap-6">
       {/* Card stack */}
-      <div className="relative w-full aspect-[3/4] max-h-[500px]">
+      <div className="relative w-full aspect-[3/4] max-h-[500px] overflow-visible">
         <AnimatePresence>
           {nextCard && (
             <SwipeCard
@@ -89,9 +98,14 @@ export function PendingSwiper({ cards, onResolve }: PendingSwiperProps) {
               card={currentCard}
               onSwipe={handleSwipe}
               isTop={true}
+              exitDirection={exitDirection}
             />
           )}
         </AnimatePresence>
+        <SwipeBurst
+          direction={exitDirection === "left" || exitDirection === "right" ? exitDirection : null}
+          trigger={burstTrigger}
+        />
       </div>
 
       {/* Action buttons */}
