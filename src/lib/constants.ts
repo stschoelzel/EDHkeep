@@ -30,6 +30,9 @@ export const SCRYFALL_BATCH_SIZE = 75;
 /** Scryfall rate limit delay between batches (ms) */
 export const SCRYFALL_DELAY = 100;
 
+/** Scryfall cache TTL in milliseconds (24 hours — card data changes rarely) */
+export const SCRYFALL_CACHE_TTL = 24 * 60 * 60 * 1000;
+
 /** CSV format detection signatures */
 export const FORMAT_SIGNATURES = {
   moxfield: ["Tradelist Count", "Edition"],

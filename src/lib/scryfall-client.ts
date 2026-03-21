@@ -1,5 +1,5 @@
 import type { MTGCard } from "./types";
-import { SCRYFALL_BATCH_SIZE, SCRYFALL_DELAY } from "./constants";
+import { SCRYFALL_BATCH_SIZE, SCRYFALL_DELAY, SCRYFALL_CACHE_TTL } from "./constants";
 
 interface ScryfallIdentifier {
   name: string;
@@ -9,6 +9,7 @@ interface ScryfallIdentifier {
 
 interface ScryfallCard {
   name: string;
+  type_line?: string;
   image_uris?: Record<string, string>;
   card_faces?: Array<{ image_uris?: Record<string, string> }>;
   prices?: Record<string, string | null>;
@@ -19,14 +20,48 @@ interface ScryfallCollectionResponse {
   not_found: unknown[];
 }
 
+// ── In-memory cache ──
+
+interface CachedCard {
+  type_line?: string;
+  image_uris?: Record<string, string>;
+  prices?: Record<string, string | null>;
+  timestamp: number;
+}
+
+const cardCache = new Map<string, CachedCard>();
+
+function getCached(name: string): CachedCard | null {
+  const key = name.toLowerCase();
+  const entry = cardCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > SCRYFALL_CACHE_TTL) {
+    cardCache.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function setCached(card: ScryfallCard): void {
+  const imageUris =
+    card.image_uris ??
+    card.card_faces?.[0]?.image_uris ??
+    undefined;
+
+  cardCache.set(card.name.toLowerCase(), {
+    type_line: card.type_line,
+    image_uris: imageUris,
+    prices: card.prices ?? undefined,
+    timestamp: Date.now(),
+  });
+}
+
+// ── API ──
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Fetch card data from Scryfall's /cards/collection endpoint.
- * Batches into groups of 75 with rate-limiting delays.
- */
 async function fetchBatch(
   identifiers: ScryfallIdentifier[]
 ): Promise<ScryfallCard[]> {
@@ -46,8 +81,9 @@ async function fetchBatch(
 }
 
 /**
- * Enrich MTGCards with Scryfall image_uris and prices.
- * Only enriches cards with category Keep or Pending to save API calls.
+ * Enrich MTGCards with Scryfall image_uris, prices, and type_line.
+ * Only enriches cards with category Keep or Pending.
+ * Uses in-memory cache to avoid redundant API calls.
  */
 export async function enrichWithScryfall(cards: MTGCard[]): Promise<MTGCard[]> {
   const toEnrich = cards.filter(
@@ -56,45 +92,71 @@ export async function enrichWithScryfall(cards: MTGCard[]): Promise<MTGCard[]> {
 
   if (toEnrich.length === 0) return cards;
 
-  // Build identifiers
-  const identifiers: ScryfallIdentifier[] = toEnrich.map((c) => {
-    const id: ScryfallIdentifier = { name: c.name };
-    if (c.set_code && c.set_code !== "UNK") {
-      id.set = c.set_code.toLowerCase();
+  // Split into cached vs uncached
+  const uncached: MTGCard[] = [];
+  const cachedLookup = new Map<string, CachedCard>();
+
+  for (const card of toEnrich) {
+    const cached = getCached(card.name);
+    if (cached) {
+      cachedLookup.set(card.name.toLowerCase(), cached);
+    } else {
+      uncached.push(card);
     }
-    return id;
-  });
-
-  // Batch fetch
-  const allResults: ScryfallCard[] = [];
-  for (let i = 0; i < identifiers.length; i += SCRYFALL_BATCH_SIZE) {
-    if (i > 0) await delay(SCRYFALL_DELAY);
-    const batch = identifiers.slice(i, i + SCRYFALL_BATCH_SIZE);
-    const results = await fetchBatch(batch);
-    allResults.push(...results);
   }
 
-  // Build lookup by normalized name
-  const lookup = new Map<string, ScryfallCard>();
-  for (const card of allResults) {
-    lookup.set(card.name.toLowerCase(), card);
+  // Only fetch uncached cards from Scryfall
+  if (uncached.length > 0) {
+    // Deduplicate by name to minimize API calls
+    const seen = new Set<string>();
+    const identifiers: ScryfallIdentifier[] = [];
+    for (const c of uncached) {
+      const key = c.name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const id: ScryfallIdentifier = { name: c.name };
+      if (c.set_code && c.set_code !== "UNK") {
+        id.set = c.set_code.toLowerCase();
+      }
+      identifiers.push(id);
+    }
+
+    // Batch fetch
+    for (let i = 0; i < identifiers.length; i += SCRYFALL_BATCH_SIZE) {
+      if (i > 0) await delay(SCRYFALL_DELAY);
+      const batch = identifiers.slice(i, i + SCRYFALL_BATCH_SIZE);
+      const results = await fetchBatch(batch);
+      for (const card of results) {
+        setCached(card);
+        const imageUris =
+          card.image_uris ??
+          card.card_faces?.[0]?.image_uris ??
+          undefined;
+        cachedLookup.set(card.name.toLowerCase(), {
+          type_line: card.type_line,
+          image_uris: imageUris,
+          prices: card.prices ?? undefined,
+          timestamp: Date.now(),
+        });
+      }
+    }
   }
 
-  // Merge data back onto cards
+  const cacheHits = toEnrich.length - uncached.length;
+  if (cacheHits > 0) {
+    console.log(`Scryfall cache: ${cacheHits} hits, ${uncached.length} fetched`);
+  }
+
+  // Merge data back onto all cards
   return cards.map((card) => {
-    const scryfall = lookup.get(card.name.toLowerCase());
-    if (!scryfall) return card;
-
-    // Handle double-faced cards where image_uris is on card_faces
-    const imageUris =
-      scryfall.image_uris ??
-      scryfall.card_faces?.[0]?.image_uris ??
-      undefined;
+    const enriched = cachedLookup.get(card.name.toLowerCase());
+    if (!enriched) return card;
 
     return {
       ...card,
-      image_uris: imageUris,
-      prices: scryfall.prices ?? undefined,
+      type_line: enriched.type_line ?? card.type_line,
+      image_uris: enriched.image_uris,
+      prices: enriched.prices ?? undefined,
     };
   });
 }
