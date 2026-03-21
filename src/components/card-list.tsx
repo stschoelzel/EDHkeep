@@ -11,6 +11,7 @@ interface CardListProps {
   cards: MTGCard[];
   variant: "keep" | "pending" | "fail";
   defaultOpen?: boolean;
+  preSorted?: boolean;
 }
 
 const variantColors: Record<string, string> = {
@@ -21,7 +22,6 @@ const variantColors: Record<string, string> = {
 
 function sortCards(cards: MTGCard[]): MTGCard[] {
   return [...cards].sort((a, b) => {
-    // Sort by color_identity, then by name
     const colorA = a.color_identity ?? "";
     const colorB = b.color_identity ?? "";
     if (colorA !== colorB) return colorA.localeCompare(colorB);
@@ -34,18 +34,22 @@ export function CardList({
   cards,
   variant,
   defaultOpen = false,
+  preSorted = false,
 }: CardListProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
-  const sorted = sortCards(cards);
+  const sorted = preSorted ? cards : sortCards(cards);
 
   return (
     <div className="bg-surface-low rounded-none">
       {/* Header */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-6 py-4 cursor-pointer hover:bg-surface-high transition-colors"
-      >
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between px-6 py-4 hover:bg-surface-high transition-colors">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setIsOpen(!isOpen)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setIsOpen(!isOpen); } }}
+          className="flex items-center gap-3 cursor-pointer"
+        >
           {isOpen ? (
             <ChevronDown size={16} className="text-foreground-muted" />
           ) : (
@@ -62,11 +66,9 @@ export function CardList({
         </div>
 
         {isOpen && cards.length > 0 && (
-          <div onClick={(e) => e.stopPropagation()}>
-            <ExportPanel cards={cards} />
-          </div>
+          <ExportPanel cards={cards} />
         )}
-      </button>
+      </div>
 
       {/* Card rows */}
       {isOpen && (
