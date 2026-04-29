@@ -1,14 +1,14 @@
 import type { MTGCard } from "./types";
 import { SCRYFALL_BATCH_SIZE, SCRYFALL_DELAY, SCRYFALL_CACHE_TTL } from "./constants";
 
-interface ScryfallIdentifier {
-  name: string;
-  set?: string;
-  collector_number?: string;
-}
+type ScryfallIdentifier =
+  | { set: string; collector_number: string }
+  | { name: string; set?: string };
 
 interface ScryfallCard {
   name: string;
+  set: string;
+  collector_number: string;
   type_line?: string;
   image_uris?: Record<string, string>;
   card_faces?: Array<{ image_uris?: Record<string, string> }>;
@@ -31,8 +31,19 @@ interface CachedCard {
 
 const cardCache = new Map<string, CachedCard>();
 
-function getCached(name: string): CachedCard | null {
-  const key = name.toLowerCase();
+/** Build a cache key from set + collector_number, falling back to name */
+function cacheKey(card: { name: string; set_code?: string; collector_number?: string }): string {
+  if (card.set_code && card.set_code !== "UNK" && card.collector_number && card.collector_number !== "0") {
+    return `${card.set_code.toLowerCase()}|${card.collector_number}`;
+  }
+  return `name|${card.name.split(" // ")[0].trim().toLowerCase()}`;
+}
+
+function cacheKeyFromScryfall(card: ScryfallCard): string {
+  return `${card.set.toLowerCase()}|${card.collector_number}`;
+}
+
+function getCached(key: string): CachedCard | null {
   const entry = cardCache.get(key);
   if (!entry) return null;
   if (Date.now() - entry.timestamp > SCRYFALL_CACHE_TTL) {
@@ -48,12 +59,26 @@ function setCached(card: ScryfallCard): void {
     card.card_faces?.[0]?.image_uris ??
     undefined;
 
-  cardCache.set(card.name.toLowerCase(), {
+  const entry: CachedCard = {
     type_line: card.type_line,
     image_uris: imageUris,
     prices: card.prices ?? undefined,
     timestamp: Date.now(),
-  });
+  };
+
+  // Cache by set+number (primary) and by name (secondary, for name-based lookups)
+  cardCache.set(cacheKeyFromScryfall(card), entry);
+  cardCache.set(`name|${card.name.split(" // ")[0].trim().toLowerCase()}`, entry);
+}
+
+// ── Fallback image URL ──
+
+/**
+ * Build a Scryfall API URL that redirects to the card image.
+ * More reliable than the static URL pattern above.
+ */
+function buildScryfallApiImageUrl(setCode: string, collectorNumber: string): string {
+  return `https://api.scryfall.com/cards/${setCode.toLowerCase()}/${encodeURIComponent(collectorNumber)}?format=image&version=normal`;
 }
 
 // ── API ──
@@ -65,63 +90,82 @@ function delay(ms: number): Promise<void> {
 async function fetchBatch(
   identifiers: ScryfallIdentifier[]
 ): Promise<ScryfallCard[]> {
-  const res = await fetch("https://api.scryfall.com/cards/collection", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifiers }),
-  });
+  try {
+    const res = await fetch("https://api.scryfall.com/cards/collection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifiers }),
+    });
 
-  if (!res.ok) {
-    console.error(`Scryfall batch failed: ${res.status}`);
+    if (!res.ok) {
+      console.error(`Scryfall batch failed: ${res.status}`);
+      return [];
+    }
+
+    const data = (await res.json()) as ScryfallCollectionResponse;
+    return data.data ?? [];
+  } catch (err) {
+    console.error("Scryfall batch fetch error:", err);
     return [];
   }
-
-  const data = (await res.json()) as ScryfallCollectionResponse;
-  return data.data ?? [];
 }
 
 /**
  * Enrich MTGCards with Scryfall image_uris, prices, and type_line.
- * Only enriches cards with category Keep or Pending.
+ * Enriches ALL cards so images are always available.
+ * Prefers set+collector_number identifiers for reliable matching.
+ * Falls back to Scryfall API image URLs when the collection API can't match.
  * Uses in-memory cache to avoid redundant API calls.
  */
 export async function enrichWithScryfall(cards: MTGCard[]): Promise<MTGCard[]> {
-  const toEnrich = cards.filter(
-    (c) => c.category === "Keep" || c.category === "Pending"
-  );
-
-  if (toEnrich.length === 0) return cards;
+  if (cards.length === 0) return cards;
 
   // Split into cached vs uncached
-  const uncached: MTGCard[] = [];
-  const cachedLookup = new Map<string, CachedCard>();
+  const uncachedCards: MTGCard[] = [];
+  const resolvedLookup = new Map<string, CachedCard>();
 
-  for (const card of toEnrich) {
-    const cached = getCached(card.name);
+  for (const card of cards) {
+    const key = cacheKey(card);
+    const cached = getCached(key);
     if (cached) {
-      cachedLookup.set(card.name.toLowerCase(), cached);
+      resolvedLookup.set(key, cached);
     } else {
-      uncached.push(card);
+      uncachedCards.push(card);
     }
   }
 
   // Only fetch uncached cards from Scryfall
-  if (uncached.length > 0) {
-    // Deduplicate by name to minimize API calls
+  if (uncachedCards.length > 0) {
+    // Deduplicate by cache key to minimize API calls
     const seen = new Set<string>();
     const identifiers: ScryfallIdentifier[] = [];
-    for (const c of uncached) {
-      const key = c.name.toLowerCase();
+    const keyToCardMap = new Map<string, MTGCard>();
+
+    for (const c of uncachedCards) {
+      const key = cacheKey(c);
       if (seen.has(key)) continue;
       seen.add(key);
-      const id: ScryfallIdentifier = { name: c.name };
-      if (c.set_code && c.set_code !== "UNK") {
-        id.set = c.set_code.toLowerCase();
+      keyToCardMap.set(key, c);
+
+      // Prefer set + collector_number (most reliable Scryfall matching)
+      if (c.set_code && c.set_code !== "UNK" && c.collector_number && c.collector_number !== "0") {
+        identifiers.push({
+          set: c.set_code.toLowerCase(),
+          collector_number: c.collector_number,
+        });
+      } else {
+        // Fall back to name-based lookup
+        const id: { name: string; set?: string } = {
+          name: c.name.split(" // ")[0].trim(),
+        };
+        if (c.set_code && c.set_code !== "UNK") {
+          id.set = c.set_code.toLowerCase();
+        }
+        identifiers.push(id);
       }
-      identifiers.push(id);
     }
 
-    // Batch fetch
+    // Batch fetch from Scryfall
     for (let i = 0; i < identifiers.length; i += SCRYFALL_BATCH_SIZE) {
       if (i > 0) await delay(SCRYFALL_DELAY);
       const batch = identifiers.slice(i, i + SCRYFALL_BATCH_SIZE);
@@ -132,31 +176,47 @@ export async function enrichWithScryfall(cards: MTGCard[]): Promise<MTGCard[]> {
           card.image_uris ??
           card.card_faces?.[0]?.image_uris ??
           undefined;
-        cachedLookup.set(card.name.toLowerCase(), {
+        const key = cacheKeyFromScryfall(card);
+        const nameKey = `name|${card.name.split(" // ")[0].trim().toLowerCase()}`;
+        const entry: CachedCard = {
           type_line: card.type_line,
           image_uris: imageUris,
           prices: card.prices ?? undefined,
           timestamp: Date.now(),
-        });
+        };
+        resolvedLookup.set(key, entry);
+        resolvedLookup.set(nameKey, entry);
       }
     }
   }
 
-  const cacheHits = toEnrich.length - uncached.length;
+  const cacheHits = cards.length - uncachedCards.length;
   if (cacheHits > 0) {
-    console.log(`Scryfall cache: ${cacheHits} hits, ${uncached.length} fetched`);
+    console.log(`Scryfall cache: ${cacheHits} hits, ${uncachedCards.length} fetched`);
   }
 
-  // Merge data back onto all cards
+  // Merge data back onto all cards, with fallback image URLs
   return cards.map((card) => {
-    const enriched = cachedLookup.get(card.name.toLowerCase());
-    if (!enriched) return card;
+    const key = cacheKey(card);
+    const enriched = resolvedLookup.get(key);
+
+    // Build fallback image URIs if Scryfall didn't return any
+    let finalImageUris = enriched?.image_uris;
+    if (!finalImageUris && card.set_code && card.set_code !== "UNK" && card.collector_number && card.collector_number !== "0") {
+      const apiUrl = buildScryfallApiImageUrl(card.set_code, card.collector_number);
+      finalImageUris = {
+        normal: apiUrl,
+        small: apiUrl.replace("version=normal", "version=small"),
+      };
+    }
+
+    if (!enriched && !finalImageUris) return card;
 
     return {
       ...card,
-      type_line: enriched.type_line ?? card.type_line,
-      image_uris: enriched.image_uris,
-      prices: enriched.prices ?? undefined,
+      type_line: enriched?.type_line ?? card.type_line,
+      image_uris: finalImageUris ?? card.image_uris,
+      prices: enriched?.prices ?? card.prices,
     };
   });
 }

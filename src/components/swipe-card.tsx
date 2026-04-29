@@ -1,6 +1,12 @@
 "use client";
 
-import { motion, useMotionValue, useTransform, type PanInfo, type Easing } from "framer-motion";
+import {
+  motion,
+  useMotionValue,
+  useTransform,
+  type PanInfo,
+  type Easing,
+} from "framer-motion";
 import type { MTGCard, SwipeDirection } from "@/lib/types";
 import { SWIPE_THRESHOLD_PX, SWIPE_THRESHOLD_VEL } from "@/lib/constants";
 
@@ -11,7 +17,12 @@ interface SwipeCardProps {
   exitDirection?: SwipeDirection | null;
 }
 
-export function SwipeCard({ card, onSwipe, isTop, exitDirection }: SwipeCardProps) {
+export function SwipeCard({
+  card,
+  onSwipe,
+  isTop,
+  exitDirection,
+}: SwipeCardProps) {
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const rotate = useTransform(x, [-200, 200], [-15, 15]);
@@ -22,10 +33,7 @@ export function SwipeCard({ card, onSwipe, isTop, exitDirection }: SwipeCardProp
   const handleDragEnd = (_: unknown, info: PanInfo) => {
     const { offset, velocity } = info;
 
-    if (
-      offset.x < -SWIPE_THRESHOLD_PX ||
-      velocity.x < -SWIPE_THRESHOLD_VEL
-    ) {
+    if (offset.x < -SWIPE_THRESHOLD_PX || velocity.x < -SWIPE_THRESHOLD_VEL) {
       onSwipe("left");
     } else if (
       offset.x > SWIPE_THRESHOLD_PX ||
@@ -76,7 +84,15 @@ export function SwipeCard({ card, onSwipe, isTop, exitDirection }: SwipeCardProp
     }
   };
 
-  const imageUrl = card.image_uris?.normal || card.image_uris?.small;
+  const imageUrl =
+    card.image_uris?.normal ||
+    card.image_uris?.small ||
+    (card.set_code &&
+    card.set_code !== "UNK" &&
+    card.collector_number &&
+    card.collector_number !== "0"
+      ? `https://api.scryfall.com/cards/${card.set_code.toLowerCase()}/${encodeURIComponent(card.collector_number)}?format=image&version=normal`
+      : null);
 
   return (
     <motion.div
@@ -131,12 +147,12 @@ export function SwipeCard({ card, onSwipe, isTop, exitDirection }: SwipeCardProp
         )}
 
         {/* Card image — top section */}
-        <div className="relative flex-1 min-h-0">
+        <div className="relative flex-1 min-h-0 items-center justify-center flex p-2">
           {imageUrl ? (
             <img
               src={imageUrl}
               alt={card.name}
-              className="w-full h-full object-contain bg-surface"
+              className="h-full object-contain aspect-[63.5/88.9] rounded-[5%] shadow-md"
               draggable={false}
             />
           ) : (
