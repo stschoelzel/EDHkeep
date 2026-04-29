@@ -1,6 +1,14 @@
 import type { EDHRecColor } from "./types";
 
-export const COLORS: EDHRecColor[] = ["w", "u", "b", "r", "g"];
+export const COLORS: EDHRecColor[] = [
+  "w",
+  "u",
+  "b",
+  "r",
+  "g",
+  "multicolor",
+  "colorless",
+];
 
 export const COLOR_NAME: Record<EDHRecColor, string> = {
   w: "white",
@@ -8,6 +16,8 @@ export const COLOR_NAME: Record<EDHRecColor, string> = {
   b: "black",
   r: "red",
   g: "green",
+  multicolor: "multicolor",
+  colorless: "colorless",
 };
 
 export const COLOR_DISPLAY: Record<EDHRecColor, string> = {
@@ -16,6 +26,8 @@ export const COLOR_DISPLAY: Record<EDHRecColor, string> = {
   b: "Black",
   r: "Red",
   g: "Green",
+  multicolor: "Multicolor",
+  colorless: "Colorless",
 };
 
 /** Buffer zone size beyond the elbow cutoff for Pending cards */

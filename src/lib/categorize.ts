@@ -71,14 +71,14 @@ export async function categorizeCollection(
   cards: MTGCard[],
   onProgress?: (p: CategorizationProgress) => void
 ): Promise<MTGCard[]> {
-  // Fetch all 5 colors in parallel
+  // Fetch WUBRG plus multicolor and colorless top-card lists in parallel
   const colorPromises = COLORS.map((color, i) => {
     return processColor(color).then((result) => {
-      const colorNames = ["White", "Blue", "Black", "Red", "Green"];
+      const colorName = COLOR_DISPLAY[color];
       onProgress?.({
         step: `fetching_${color}`,
-        detail: `Fetched ${colorNames[i]} top cards (${result.cards.length} cards, elbow at #${result.elbowIndex})`,
-        percent: 15 + i * 12,
+        detail: `Fetched ${colorName} top cards (${result.cards.length} cards, elbow at #${result.elbowIndex})`,
+        percent: 15 + Math.round((i / COLORS.length) * 60),
       });
       return result;
     });
@@ -110,9 +110,21 @@ export async function categorizeCollection(
     }
   }
 
+  // Basic lands are always Fail — no need to evaluate them
+  const BASIC_LANDS = new Set([
+    "plains", "island", "swamp", "mountain", "forest", "wastes",
+    "snow-covered plains", "snow-covered island", "snow-covered swamp",
+    "snow-covered mountain", "snow-covered forest",
+  ]);
+
   // Categorize each card
   return cards.map((card) => {
     const normalized = normalizeName(card.name);
+
+    if (BASIC_LANDS.has(normalized)) {
+      return { ...card, category: "Fail" as const };
+    }
+
     const keepMeta = globalKeep.get(normalized);
     const pendingMeta = globalPending.get(normalized);
 

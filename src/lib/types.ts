@@ -19,7 +19,14 @@ export interface MTGCard {
 
 // ── EDHRec Types ──
 
-export type EDHRecColor = "w" | "u" | "b" | "r" | "g";
+export type EDHRecColor =
+  | "w"
+  | "u"
+  | "b"
+  | "r"
+  | "g"
+  | "multicolor"
+  | "colorless";
 
 export interface EDHRecCardView {
   name: string;
