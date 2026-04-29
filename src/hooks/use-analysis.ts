@@ -55,7 +55,7 @@ export function useAnalysis(): UseAnalysisReturn {
 
         pushEvent("parsing", `Parsed ${cards.length} cards from ${file.name}`, 10);
 
-        // Step 2 & 3: Fetch EDHRec data + categorize (progress emitted from categorize)
+        // Step 2 & 3: Load generated EDHRec data + categorize
         const categorized = await categorizeCollection(cards, (p) => {
           pushEvent(p.step, p.detail, p.percent);
         });

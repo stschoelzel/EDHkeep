@@ -1,11 +1,26 @@
-import type { MTGCard, EDHRecColor, EDHRecCardView } from "./types";
-import { COLORS, COLOR_DISPLAY, PENDING_BUFFER } from "./constants";
-import { fetchEDHRecTop } from "./edhrec-client";
-import { calculateElbow } from "./elbow";
+import type { MTGCard } from "./types";
 
-/** Normalize split card names: "Fire // Ice" → "fire" */
-function normalizeName(name: string): string {
-  return name.split(" // ")[0].trim().toLowerCase();
+interface StaticTopCard {
+  rank: number;
+  category: "Keep" | "Pending" | "Fail";
+  name: string;
+  edhrec_url?: string;
+  num_decks: number;
+  inclusion_rate: number;
+  scryfall?: {
+    color_identity?: string[];
+  } | null;
+}
+
+interface StaticTopCardsData {
+  generated_at: string;
+  count: number;
+  category_method: string;
+  thresholds: {
+    keep_inclusion_rate: number;
+    pending_inclusion_rate: number;
+  };
+  cards: StaticTopCard[];
 }
 
 interface CardMeta {
@@ -15,53 +30,86 @@ interface CardMeta {
   inclusion: number;
 }
 
-interface ColorData {
-  color: EDHRecColor;
-  cards: EDHRecCardView[];
-  elbowIndex: number;
-  keepMap: Map<string, CardMeta>;
-  pendingMap: Map<string, CardMeta>;
-}
-
-/**
- * Process a single color: fetch top cards, run elbow, build keep/pending maps.
- */
-async function processColor(color: EDHRecColor): Promise<ColorData> {
-  const cards = await fetchEDHRecTop(color);
-  const numDecks = cards.map((c) => c.num_decks);
-  const elbowIndex = calculateElbow(numDecks);
-
-  const keepMap = new Map<string, CardMeta>();
-  const pendingMap = new Map<string, CardMeta>();
-
-  for (let i = 0; i < cards.length; i++) {
-    const card = cards[i];
-    const normalized = normalizeName(card.name);
-    const meta: CardMeta = {
-      rank: i + 1,
-      url: card.url ? `https://edhrec.com${card.url}` : "",
-      color: COLOR_DISPLAY[color],
-      inclusion: card.num_decks,
-    };
-
-    if (i < elbowIndex) {
-      keepMap.set(normalized, meta);
-    } else if (i < elbowIndex + PENDING_BUFFER) {
-      pendingMap.set(normalized, meta);
-    }
-  }
-
-  return { color, cards, elbowIndex, keepMap, pendingMap };
-}
-
 export interface CategorizationProgress {
   step: string;
   detail: string;
   percent: number;
 }
 
+const TOP_CARDS_URL = "/data/edhrec-top-cards.json";
+
+let topCardsDataPromise: Promise<StaticTopCardsData> | null = null;
+
+/** Normalize split card names: "Fire // Ice" -> "fire" */
+function normalizeName(name: string): string {
+  return name.split(" // ")[0].trim().toLowerCase();
+}
+
+function formatColorIdentity(colorIdentity?: string[]): string {
+  if (!colorIdentity || colorIdentity.length === 0) return "Colorless";
+  return colorIdentity.join("");
+}
+
+async function loadTopCardsData(): Promise<StaticTopCardsData> {
+  if (!topCardsDataPromise) {
+    topCardsDataPromise = fetch(TOP_CARDS_URL).then(async (response) => {
+      if (!response.ok) {
+        throw new Error(
+          `Failed to load static EDHRec top-card data: ${response.status} ${response.statusText}`
+        );
+      }
+
+      return (await response.json()) as StaticTopCardsData;
+    });
+  }
+
+  return topCardsDataPromise;
+}
+
+function buildRankMaps(cards: StaticTopCard[]): {
+  keepMap: Map<string, CardMeta>;
+  pendingMap: Map<string, CardMeta>;
+} {
+  const keepMap = new Map<string, CardMeta>();
+  const pendingMap = new Map<string, CardMeta>();
+
+  for (const card of cards) {
+    const normalized = normalizeName(card.name);
+    const meta: CardMeta = {
+      rank: card.rank,
+      url: card.edhrec_url ?? "",
+      color: formatColorIdentity(card.scryfall?.color_identity),
+      inclusion: card.num_decks,
+    };
+
+    if (card.category === "Keep") {
+      keepMap.set(normalized, meta);
+      pendingMap.delete(normalized);
+    } else if (card.category === "Pending" && !keepMap.has(normalized)) {
+      pendingMap.set(normalized, meta);
+    }
+  }
+
+  return { keepMap, pendingMap };
+}
+
+// Basic lands are always Fail, even if they appear in an external top-card source.
+const BASIC_LANDS = new Set([
+  "plains",
+  "island",
+  "swamp",
+  "mountain",
+  "forest",
+  "wastes",
+  "snow-covered plains",
+  "snow-covered island",
+  "snow-covered swamp",
+  "snow-covered mountain",
+  "snow-covered forest",
+]);
+
 /**
- * Categorize a collection of cards using EDHRec data + Elbow Method.
+ * Categorize a collection of cards using generated EDHRec yearly top-card data.
  *
  * @param cards - Parsed MTGCard stubs (all initially "Pending")
  * @param onProgress - Optional callback for streaming progress
@@ -71,53 +119,24 @@ export async function categorizeCollection(
   cards: MTGCard[],
   onProgress?: (p: CategorizationProgress) => void
 ): Promise<MTGCard[]> {
-  // Fetch WUBRG plus multicolor and colorless top-card lists in parallel
-  const colorPromises = COLORS.map((color, i) => {
-    return processColor(color).then((result) => {
-      const colorName = COLOR_DISPLAY[color];
-      onProgress?.({
-        step: `fetching_${color}`,
-        detail: `Fetched ${colorName} top cards (${result.cards.length} cards, elbow at #${result.elbowIndex})`,
-        percent: 15 + Math.round((i / COLORS.length) * 60),
-      });
-      return result;
-    });
+  onProgress?.({
+    step: "loading_top_cards",
+    detail: "Loading static EDHRec top-card data...",
+    percent: 15,
   });
 
-  const colorResults = await Promise.all(colorPromises);
+  const topCardsData = await loadTopCardsData();
+  const { keepMap, pendingMap } = buildRankMaps(topCardsData.cards);
 
   onProgress?.({
     step: "categorizing",
-    detail: "Running elbow algorithm and categorizing cards...",
+    detail:
+      `Categorizing with ${topCardsData.count} EDHRec cards ` +
+      `(${(topCardsData.thresholds.keep_inclusion_rate * 100).toFixed(1)}% Keep, ` +
+      `${(topCardsData.thresholds.pending_inclusion_rate * 100).toFixed(1)}% Pending thresholds)...`,
     percent: 75,
   });
 
-  // Merge all color maps: Keep takes priority over Pending
-  const globalKeep = new Map<string, CardMeta>();
-  const globalPending = new Map<string, CardMeta>();
-
-  for (const result of colorResults) {
-    for (const [name, meta] of result.keepMap) {
-      // Keep always wins
-      globalKeep.set(name, meta);
-      globalPending.delete(name);
-    }
-    for (const [name, meta] of result.pendingMap) {
-      // Only add to pending if not already in keep
-      if (!globalKeep.has(name)) {
-        globalPending.set(name, meta);
-      }
-    }
-  }
-
-  // Basic lands are always Fail — no need to evaluate them
-  const BASIC_LANDS = new Set([
-    "plains", "island", "swamp", "mountain", "forest", "wastes",
-    "snow-covered plains", "snow-covered island", "snow-covered swamp",
-    "snow-covered mountain", "snow-covered forest",
-  ]);
-
-  // Categorize each card
   return cards.map((card) => {
     const normalized = normalizeName(card.name);
 
@@ -125,8 +144,8 @@ export async function categorizeCollection(
       return { ...card, category: "Fail" as const };
     }
 
-    const keepMeta = globalKeep.get(normalized);
-    const pendingMeta = globalPending.get(normalized);
+    const keepMeta = keepMap.get(normalized);
+    const pendingMeta = pendingMap.get(normalized);
 
     if (keepMeta) {
       return {

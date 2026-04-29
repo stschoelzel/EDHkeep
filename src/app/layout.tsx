@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "EDHKeep — Commander Collection Vault",
   description:
-    "MTG Commander collection optimizer. Categorize your cards as Keep, Pending, or Fail using EDHRec data and the Elbow Method algorithm.",
+    "MTG Commander collection optimizer. Categorize your cards as Keep, Pending, or Fail using EDHRec inclusion-rate data.",
 };
 
 export default function RootLayout({

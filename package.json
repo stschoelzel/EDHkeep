@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "generate:edhrec-top": "node scripts/generate-edhrec-top-cards.mjs",
     "start": "next start",
     "lint": "eslint"
   },
