@@ -47,7 +47,7 @@ export const useCollectionStore = create<CollectionState>((set) => ({
   skipCard: (cardName) =>
     set((state) => {
       const idx = state.allCards.findIndex(
-        (c) => c.name === cardName && c.category === "Pending"
+        (c) => c.name === cardName && c.category === "Pending",
       );
       if (idx === -1) return state;
 
@@ -68,15 +68,15 @@ export const useCollectionStore = create<CollectionState>((set) => ({
 // Selectors using useShallow to prevent infinite re-render loops
 export const useKeepCards = () =>
   useCollectionStore(
-    useShallow((s) => s.allCards.filter((c) => c.category === "Keep"))
+    useShallow((s) => s.allCards.filter((c) => c.category === "Keep")),
   );
 
 export const usePendingCards = () =>
   useCollectionStore(
-    useShallow((s) => s.allCards.filter((c) => c.category === "Pending"))
+    useShallow((s) => s.allCards.filter((c) => c.category === "Pending")),
   );
 
 export const useFailCards = () =>
   useCollectionStore(
-    useShallow((s) => s.allCards.filter((c) => c.category === "Fail"))
+    useShallow((s) => s.allCards.filter((c) => c.category === "Fail")),
   );
