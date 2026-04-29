@@ -43,6 +43,45 @@ function parseCardList(data: Record<string, unknown>): EDHRecCardView[] {
 }
 
 /**
+ * CORS proxy URLs to try when direct fetch fails.
+ * EDHRec's JSON API does not set Access-Control-Allow-Origin for browsers.
+ */
+const CORS_PROXIES = [
+  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+];
+
+/**
+ * Fetch JSON from a URL, trying direct first, then CORS proxies.
+ */
+async function fetchWithCORSFallback(url: string): Promise<Record<string, unknown>> {
+  // Try direct fetch first (works in dev / same-origin / if EDHRec allows it)
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+      return (await res.json()) as Record<string, unknown>;
+    }
+  } catch {
+    // CORS or network error — fall through to proxies
+  }
+
+  // Try CORS proxies
+  for (const proxyFn of CORS_PROXIES) {
+    try {
+      const proxied = proxyFn(url);
+      const res = await fetch(proxied);
+      if (res.ok) {
+        return (await res.json()) as Record<string, unknown>;
+      }
+    } catch {
+      // Try next proxy
+    }
+  }
+
+  throw new Error(`Failed to fetch ${url} (all CORS proxies exhausted)`);
+}
+
+/**
  * Fetch top cards for a color from EDHRec.
  * Results are cached in-memory for 1 hour.
  */
@@ -60,16 +99,7 @@ export async function fetchEDHRecTop(
   const url = `https://json.edhrec.com/pages/top/${colorName}.json`;
 
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "EDHKeep/1.0" },
-    });
-
-    if (!res.ok) {
-      console.error(`EDHRec fetch failed for ${colorName}: ${res.status}`);
-      return [];
-    }
-
-    const data = (await res.json()) as Record<string, unknown>;
+    const data = await fetchWithCORSFallback(url);
     const cards = parseCardList(data);
 
     cache.set(cacheKey, { data: cards, timestamp: Date.now() });

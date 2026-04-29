@@ -3,7 +3,10 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useCollectionStore } from "@/stores/collection-store";
-import type { ProgressEvent, StreamEvent } from "@/lib/types";
+import { parseCSV } from "@/lib/csv-parser";
+import { categorizeCollection } from "@/lib/categorize";
+import { enrichWithScryfall } from "@/lib/scryfall-client";
+import type { ProgressEvent, CategoryStats, UploadResponse } from "@/lib/types";
 
 interface UseAnalysisReturn {
   isLoading: boolean;
@@ -19,66 +22,67 @@ export function useAnalysis(): UseAnalysisReturn {
   const setAnalysisResult = useCollectionStore((s) => s.setAnalysisResult);
   const router = useRouter();
 
+  const pushEvent = (step: string, detail: string, percent: number) => {
+    const event: ProgressEvent = { type: "progress", step, detail, percent };
+    setEvents((prev) => [...prev, event]);
+  };
+
   const upload = useCallback(
     async (file: File) => {
       setIsLoading(true);
       setEvents([]);
       setError(null);
 
-      const formData = new FormData();
-      formData.append("file", file);
-
       try {
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          body: formData,
-        });
+        // Step 1: Read & parse CSV (all in-browser)
+        pushEvent("parsing", `Parsing ${file.name}...`, 5);
+        const content = await file.text();
+        const cards = parseCSV(content);
 
-        if (!res.ok || !res.body) {
-          setError(`Upload failed: ${res.statusText}`);
+        if (cards.length === 0) {
+          pushEvent("parsing", "No cards found in CSV", 100);
+          const result: UploadResponse = {
+            filename: file.name,
+            total_cards: 0,
+            stats: { Keep: 0, Pending: 0, Fail: 0 },
+            all_cards: [],
+          };
+          setAnalysisResult(result);
           setIsLoading(false);
+          router.push("/dashboard");
           return;
         }
 
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
+        pushEvent("parsing", `Parsed ${cards.length} cards from ${file.name}`, 10);
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        // Step 2 & 3: Fetch EDHRec data + categorize (progress emitted from categorize)
+        const categorized = await categorizeCollection(cards, (p) => {
+          pushEvent(p.step, p.detail, p.percent);
+        });
 
-          buffer += decoder.decode(value, { stream: true });
+        // Step 4: Enrich with Scryfall images & prices
+        pushEvent("enriching", "Fetching card images from Scryfall...", 80);
+        const enriched = await enrichWithScryfall(categorized);
+        pushEvent("complete", "Analysis complete", 95);
 
-          // Parse SSE frames (split on double newline)
-          const frames = buffer.split("\n\n");
-          buffer = frames.pop() ?? "";
-
-          for (const frame of frames) {
-            const line = frame.trim();
-            if (!line.startsWith("data: ")) continue;
-
-            const json = line.slice(6);
-            try {
-              const event = JSON.parse(json) as StreamEvent;
-
-              if (event.type === "progress") {
-                setEvents((prev) => [...prev, event]);
-              } else if (event.type === "result") {
-                setAnalysisResult(event.data);
-                setIsLoading(false);
-                router.push("/dashboard");
-                return;
-              }
-            } catch {
-              // Skip malformed frames
-            }
-          }
+        // Build stats
+        const stats: CategoryStats = { Keep: 0, Pending: 0, Fail: 0 };
+        for (const card of enriched) {
+          stats[card.category]++;
         }
 
+        const result: UploadResponse = {
+          filename: file.name,
+          total_cards: enriched.length,
+          stats,
+          all_cards: enriched,
+        };
+
+        setAnalysisResult(result);
         setIsLoading(false);
+        router.push("/dashboard");
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Upload failed");
+        setError(err instanceof Error ? err.message : "Analysis failed");
         setIsLoading(false);
       }
     },
