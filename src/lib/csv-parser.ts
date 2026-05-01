@@ -57,6 +57,7 @@ export function parseCSV(content: string): MTGCard[] {
       name,
       set_code: row[cols.set]?.trim() || "UNK",
       collector_number: row[cols.collector_number]?.trim() || "0",
+      quantity: 1,
       type_line: "Unknown",
       category: "Pending",
     });

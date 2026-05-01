@@ -33,6 +33,11 @@ export function CardRow({ card }: CardRowProps) {
           <span className="font-mono text-[10px] text-foreground-muted uppercase">
             {card.set_code}
           </span>
+          {(card.quantity ?? 1) > 1 && (
+            <span className="font-mono text-[10px] text-foreground-muted">
+              x{card.quantity}
+            </span>
+          )}
           {card.color_identity && (
             <span className="font-mono text-[10px] text-foreground-muted">
               {card.color_identity}

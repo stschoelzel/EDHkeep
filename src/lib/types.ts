@@ -3,9 +3,12 @@
 export type CardCategory = "Keep" | "Pending" | "Fail";
 
 export interface MTGCard {
+  id?: string;
+  oracle_id?: string;
   name: string;
   set_code: string;
   collector_number: string;
+  quantity?: number;
   mana_cost?: string;
   type_line: string;
   image_uris?: Record<string, string>;

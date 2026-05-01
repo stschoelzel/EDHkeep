@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCollectionStore } from "@/stores/collection-store";
 import { parseCSV } from "@/lib/csv-parser";
 import { categorizeCollection } from "@/lib/categorize";
+import { coalesceGameplayCards } from "@/lib/card-identity";
 import { enrichWithScryfall } from "@/lib/scryfall-client";
 import type { ProgressEvent, CategoryStats, UploadResponse } from "@/lib/types";
 
@@ -59,27 +60,29 @@ export function useAnalysis(): UseAnalysisReturn {
           10,
         );
 
-        // Step 2 & 3: Load generated EDHRec data + categorize
-        const categorized = await categorizeCollection(cards, (p) => {
+        // Step 2: Enrich first so print variants can collapse by oracle_id.
+        pushEvent("enriching", "Fetching card identities and images from Scryfall...", 35);
+        const enrichedCards = await enrichWithScryfall(cards);
+        const gameplayCards = coalesceGameplayCards(enrichedCards);
+
+        // Step 3: Load generated EDHRec data + categorize
+        const categorized = await categorizeCollection(gameplayCards, (p) => {
           pushEvent(p.step, p.detail, p.percent);
         });
 
-        // Step 4: Enrich with Scryfall images & prices
-        pushEvent("enriching", "Fetching card images from Scryfall...", 80);
-        const enriched = await enrichWithScryfall(categorized);
         pushEvent("complete", "Analysis complete", 95);
 
         // Build stats
         const stats: CategoryStats = { Keep: 0, Pending: 0, Fail: 0 };
-        for (const card of enriched) {
+        for (const card of categorized) {
           stats[card.category]++;
         }
 
         const result: UploadResponse = {
           filename: file.name,
-          total_cards: enriched.length,
+          total_cards: categorized.length,
           stats,
-          all_cards: enriched,
+          all_cards: categorized,
         };
 
         setAnalysisResult(result);

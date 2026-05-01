@@ -6,6 +6,8 @@ type ScryfallIdentifier =
   | { name: string; set?: string };
 
 interface ScryfallCard {
+  id?: string;
+  oracle_id?: string;
   name: string;
   set: string;
   collector_number: string;
@@ -23,6 +25,11 @@ interface ScryfallCollectionResponse {
 // ── In-memory cache ──
 
 interface CachedCard {
+  id?: string;
+  oracle_id?: string;
+  name?: string;
+  set_code?: string;
+  collector_number?: string;
   type_line?: string;
   image_uris?: Record<string, string>;
   prices?: Record<string, string | null>;
@@ -36,7 +43,7 @@ interface CachedCardRecord extends CachedCard {
 const cardCache = new Map<string, CachedCard>();
 
 const DB_NAME = "edhkeep";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const SCRYFALL_STORE = "scryfall_cards";
 
 let dbPromise: Promise<IDBDatabase | null> | null = null;
@@ -70,6 +77,11 @@ function cacheEntriesFromScryfall(card: ScryfallCard): Array<[string, CachedCard
     undefined;
 
   const entry: CachedCard = {
+    id: card.id,
+    oracle_id: card.oracle_id,
+    name: card.name,
+    set_code: card.set,
+    collector_number: card.collector_number,
     type_line: card.type_line,
     image_uris: imageUris,
     prices: card.prices ?? undefined,
@@ -99,8 +111,11 @@ function openScryfallCacheDb(): Promise<IDBDatabase | null> {
     dbPromise = new Promise((resolve) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = (event) => {
         const db = request.result;
+        if (db.objectStoreNames.contains(SCRYFALL_STORE) && event.oldVersion < 2) {
+          db.deleteObjectStore(SCRYFALL_STORE);
+        }
         if (!db.objectStoreNames.contains(SCRYFALL_STORE)) {
           db.createObjectStore(SCRYFALL_STORE, { keyPath: "key" });
         }
@@ -151,6 +166,11 @@ async function getPersistentCached(keys: string[]): Promise<Map<string, CachedCa
         const record = request.result as CachedCardRecord | undefined;
         if (record && isFresh(record)) {
           const entry: CachedCard = {
+            id: record.id,
+            oracle_id: record.oracle_id,
+            name: record.name,
+            set_code: record.set_code,
+            collector_number: record.collector_number,
             type_line: record.type_line,
             image_uris: record.image_uris,
             prices: record.prices,
@@ -344,6 +364,11 @@ export async function enrichWithScryfall(cards: MTGCard[]): Promise<MTGCard[]> {
 
     return {
       ...card,
+      id: enriched?.id ?? card.id,
+      oracle_id: enriched?.oracle_id ?? card.oracle_id,
+      name: enriched?.name ?? card.name,
+      set_code: enriched?.set_code ?? card.set_code,
+      collector_number: enriched?.collector_number ?? card.collector_number,
       type_line: enriched?.type_line ?? card.type_line,
       image_uris: finalImageUris ?? card.image_uris,
       prices: enriched?.prices ?? card.prices,

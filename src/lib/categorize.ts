@@ -1,4 +1,5 @@
 import type { MTGCard } from "./types";
+import { normalizeGameplayName } from "./card-identity";
 
 interface StaticTopCard {
   rank: number;
@@ -40,11 +41,6 @@ const TOP_CARDS_URL = "/data/edhrec-top-cards.json";
 
 let topCardsDataPromise: Promise<StaticTopCardsData> | null = null;
 
-/** Normalize split card names: "Fire // Ice" -> "fire" */
-function normalizeName(name: string): string {
-  return name.split(" // ")[0].trim().toLowerCase();
-}
-
 function formatColorIdentity(colorIdentity?: string[]): string {
   if (!colorIdentity || colorIdentity.length === 0) return "Colorless";
   return colorIdentity.join("");
@@ -74,7 +70,7 @@ function buildRankMaps(cards: StaticTopCard[]): {
   const pendingMap = new Map<string, CardMeta>();
 
   for (const card of cards) {
-    const normalized = normalizeName(card.name);
+    const normalized = normalizeGameplayName(card.name);
     const meta: CardMeta = {
       rank: card.rank,
       url: card.edhrec_url ?? "",
@@ -138,7 +134,7 @@ export async function categorizeCollection(
   });
 
   return cards.map((card) => {
-    const normalized = normalizeName(card.name);
+    const normalized = normalizeGameplayName(card.name);
 
     if (BASIC_LANDS.has(normalized)) {
       return { ...card, category: "Fail" as const };

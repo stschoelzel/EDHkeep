@@ -28,7 +28,7 @@ function exportMoxfield(cards: MTGCard[]): string {
     "Collector Number",
   ];
   const rows = cards.map((c) => [
-    "1",
+    String(c.quantity ?? 1),
     "0",
     c.name,
     c.set_code,
@@ -43,13 +43,23 @@ function exportMoxfield(cards: MTGCard[]): string {
 
 function exportDragonShield(cards: MTGCard[]): string {
   const headers = ["Card Name", "Set Code", "Quantity", "Card Number"];
-  const rows = cards.map((c) => [c.name, c.set_code, "1", c.collector_number]);
+  const rows = cards.map((c) => [
+    c.name,
+    c.set_code,
+    String(c.quantity ?? 1),
+    c.collector_number,
+  ]);
   return toCSV(headers, rows);
 }
 
 function exportManaBox(cards: MTGCard[]): string {
   const headers = ["Name", "Set code", "Quantity", "Collector Number"];
-  const rows = cards.map((c) => [c.name, c.set_code, "1", c.collector_number]);
+  const rows = cards.map((c) => [
+    c.name,
+    c.set_code,
+    String(c.quantity ?? 1),
+    c.collector_number,
+  ]);
   return toCSV(headers, rows);
 }
 
