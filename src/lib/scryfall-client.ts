@@ -29,7 +29,17 @@ interface CachedCard {
   timestamp: number;
 }
 
+interface CachedCardRecord extends CachedCard {
+  key: string;
+}
+
 const cardCache = new Map<string, CachedCard>();
+
+const DB_NAME = "edhkeep";
+const DB_VERSION = 1;
+const SCRYFALL_STORE = "scryfall_cards";
+
+let dbPromise: Promise<IDBDatabase | null> | null = null;
 
 /** Build a cache key from set + collector_number, falling back to name */
 function cacheKey(card: { name: string; set_code?: string; collector_number?: string }): string {
@@ -53,7 +63,7 @@ function getCached(key: string): CachedCard | null {
   return entry;
 }
 
-function setCached(card: ScryfallCard): void {
+function cacheEntriesFromScryfall(card: ScryfallCard): Array<[string, CachedCard]> {
   const imageUris =
     card.image_uris ??
     card.card_faces?.[0]?.image_uris ??
@@ -66,9 +76,114 @@ function setCached(card: ScryfallCard): void {
     timestamp: Date.now(),
   };
 
-  // Cache by set+number (primary) and by name (secondary, for name-based lookups)
-  cardCache.set(cacheKeyFromScryfall(card), entry);
-  cardCache.set(`name|${card.name.split(" // ")[0].trim().toLowerCase()}`, entry);
+  return [
+    [cacheKeyFromScryfall(card), entry],
+    [`name|${card.name.split(" // ")[0].trim().toLowerCase()}`, entry],
+  ];
+}
+
+function setMemoryCached(entries: Array<[string, CachedCard]>): void {
+  for (const [key, entry] of entries) {
+    cardCache.set(key, entry);
+  }
+}
+
+function canUseIndexedDB(): boolean {
+  return typeof indexedDB !== "undefined";
+}
+
+function openScryfallCacheDb(): Promise<IDBDatabase | null> {
+  if (!canUseIndexedDB()) return Promise.resolve(null);
+
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(SCRYFALL_STORE)) {
+          db.createObjectStore(SCRYFALL_STORE, { keyPath: "key" });
+        }
+      };
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => {
+        console.warn("IndexedDB Scryfall cache unavailable:", request.error);
+        resolve(null);
+      };
+      request.onblocked = () => {
+        console.warn("IndexedDB Scryfall cache blocked by another tab");
+        resolve(null);
+      };
+    });
+  }
+
+  return dbPromise;
+}
+
+function isFresh(entry: CachedCard): boolean {
+  return Date.now() - entry.timestamp <= SCRYFALL_CACHE_TTL;
+}
+
+async function getPersistentCached(keys: string[]): Promise<Map<string, CachedCard>> {
+  const db = await openScryfallCacheDb();
+  const result = new Map<string, CachedCard>();
+  if (!db || keys.length === 0) return result;
+
+  return new Promise((resolve) => {
+    const transaction = db.transaction(SCRYFALL_STORE, "readonly");
+    const store = transaction.objectStore(SCRYFALL_STORE);
+    let pending = keys.length;
+
+    const finishOne = () => {
+      pending -= 1;
+      if (pending === 0) resolve(result);
+    };
+
+    transaction.onerror = () => {
+      console.warn("IndexedDB Scryfall cache read failed:", transaction.error);
+      resolve(result);
+    };
+
+    for (const key of keys) {
+      const request = store.get(key);
+      request.onsuccess = () => {
+        const record = request.result as CachedCardRecord | undefined;
+        if (record && isFresh(record)) {
+          const entry: CachedCard = {
+            type_line: record.type_line,
+            image_uris: record.image_uris,
+            prices: record.prices,
+            timestamp: record.timestamp,
+          };
+          result.set(key, entry);
+          cardCache.set(key, entry);
+        }
+        finishOne();
+      };
+      request.onerror = finishOne;
+    }
+  });
+}
+
+async function setPersistentCached(entries: Array<[string, CachedCard]>): Promise<void> {
+  const db = await openScryfallCacheDb();
+  if (!db || entries.length === 0) return;
+
+  return new Promise((resolve) => {
+    const transaction = db.transaction(SCRYFALL_STORE, "readwrite");
+    const store = transaction.objectStore(SCRYFALL_STORE);
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => {
+      console.warn("IndexedDB Scryfall cache write failed:", transaction.error);
+      resolve();
+    };
+
+    for (const [key, entry] of entries) {
+      store.put({ key, ...entry } satisfies CachedCardRecord);
+    }
+  });
 }
 
 // ── Fallback image URL ──
@@ -115,18 +230,33 @@ async function fetchBatch(
  * Enriches ALL cards so images are always available.
  * Prefers set+collector_number identifiers for reliable matching.
  * Falls back to Scryfall API image URLs when the collection API can't match.
- * Uses in-memory cache to avoid redundant API calls.
+ * Uses in-memory and IndexedDB caches to avoid redundant API calls.
  */
 export async function enrichWithScryfall(cards: MTGCard[]): Promise<MTGCard[]> {
   if (cards.length === 0) return cards;
 
-  // Split into cached vs uncached
-  const uncachedCards: MTGCard[] = [];
+  // Split into memory-cached vs persistent-cache candidates.
+  const missingMemoryCards: MTGCard[] = [];
   const resolvedLookup = new Map<string, CachedCard>();
+  const missingKeys = new Set<string>();
 
   for (const card of cards) {
     const key = cacheKey(card);
     const cached = getCached(key);
+    if (cached) {
+      resolvedLookup.set(key, cached);
+    } else {
+      missingMemoryCards.push(card);
+      missingKeys.add(key);
+    }
+  }
+
+  const persistentHits = await getPersistentCached([...missingKeys]);
+  const uncachedCards: MTGCard[] = [];
+
+  for (const card of missingMemoryCards) {
+    const key = cacheKey(card);
+    const cached = persistentHits.get(key);
     if (cached) {
       resolvedLookup.set(key, cached);
     } else {
@@ -170,29 +300,29 @@ export async function enrichWithScryfall(cards: MTGCard[]): Promise<MTGCard[]> {
       if (i > 0) await delay(SCRYFALL_DELAY);
       const batch = identifiers.slice(i, i + SCRYFALL_BATCH_SIZE);
       const results = await fetchBatch(batch);
+      const persistentEntries: Array<[string, CachedCard]> = [];
+
       for (const card of results) {
-        setCached(card);
-        const imageUris =
-          card.image_uris ??
-          card.card_faces?.[0]?.image_uris ??
-          undefined;
-        const key = cacheKeyFromScryfall(card);
-        const nameKey = `name|${card.name.split(" // ")[0].trim().toLowerCase()}`;
-        const entry: CachedCard = {
-          type_line: card.type_line,
-          image_uris: imageUris,
-          prices: card.prices ?? undefined,
-          timestamp: Date.now(),
-        };
-        resolvedLookup.set(key, entry);
-        resolvedLookup.set(nameKey, entry);
+        const entries = cacheEntriesFromScryfall(card);
+        setMemoryCached(entries);
+        persistentEntries.push(...entries);
+
+        for (const [key, entry] of entries) {
+          resolvedLookup.set(key, entry);
+        }
       }
+
+      await setPersistentCached(persistentEntries);
     }
   }
 
-  const cacheHits = cards.length - uncachedCards.length;
-  if (cacheHits > 0) {
-    console.log(`Scryfall cache: ${cacheHits} hits, ${uncachedCards.length} fetched`);
+  const memoryHits = cards.length - missingMemoryCards.length;
+  const indexedDbHits = persistentHits.size;
+  if (memoryHits > 0 || indexedDbHits > 0) {
+    console.log(
+      `Scryfall cache: ${memoryHits} memory hits, ${indexedDbHits} IndexedDB hits, ` +
+        `${uncachedCards.length} fetched`
+    );
   }
 
   // Merge data back onto all cards, with fallback image URLs

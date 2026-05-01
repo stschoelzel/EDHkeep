@@ -53,7 +53,11 @@ export function useAnalysis(): UseAnalysisReturn {
           return;
         }
 
-        pushEvent("parsing", `Parsed ${cards.length} cards from ${file.name}`, 10);
+        pushEvent(
+          "parsing",
+          `Parsed ${cards.length} cards from ${file.name}`,
+          10,
+        );
 
         // Step 2 & 3: Load generated EDHRec data + categorize
         const categorized = await categorizeCollection(cards, (p) => {
@@ -86,7 +90,7 @@ export function useAnalysis(): UseAnalysisReturn {
         setIsLoading(false);
       }
     },
-    [setAnalysisResult, router]
+    [setAnalysisResult, router],
   );
 
   return { isLoading, events, error, upload };
